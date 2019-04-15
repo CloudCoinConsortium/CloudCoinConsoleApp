@@ -106,11 +106,61 @@ public class Pbank implements ActionListener, ComponentListener {
     
     ArrayList<String> exportedFilenames;
     
+    WLogger wl;
+    
+    public void copyTemplates(String user) {
+        int d;
+        String templateDir, fileName;
+
+	templateDir = AppCore.getUserDir(Config.DIR_TEMPLATES, user);
+	fileName = templateDir + File.separator + "jpeg1.jpg";
+	File f = new File(fileName);
+	if (!f.exists()) {
+            for (int i = 0; i < AppCore.getDenominations().length; i++) {
+                d = AppCore.getDenominations()[i];
+                fileName = "jpeg" + d + ".jpg";
+                   
+                URL u = getClass().getClassLoader().getResource("resources/" + fileName);
+                if (u != null) {
+                    String src = u.getFile();
+                    String dst = AppCore.getUserDir(Config.DIR_TEMPLATES, user);
+                        
+                    AppCore.copyFile(src, dst);
+                }
+                    
+                //copyFile(fileName, AppCore.getUserDir(Config.DIR_TEMPLATES) + File.separator + fileName);
+            }
+        }
+    }
+    /*
+    public void copyFile(String src, String dst) throws IOException {
+        URL u = getClass().getClassLoader().getResource("resources/" + src);
+        
+        if (u == null)
+            return;
+        
+	InputStream in = new FileInputStream(u.getFile());
+	OutputStream out = new FileOutputStream(dst);
+
+	byte[] buf = new byte[1024];
+	int len;
+	while ((len = in.read(buf)) > 0)
+            out.write(buf, 0, len);
+
+        in.close();
+	out.close();
+    }*/
+    
     public void initSystem() {
-        WLogger wl;
         wl = new WLogger();
         
         AppCore.initPool();
+        
+        
+        
+        requestedDialog = DIALOG_NONE;
+        importState = IMPORT_STATE_INIT;
+        exportType = Config.TYPE_STACK;
         
         try {
             String home = System.getProperty("user.home");
@@ -118,31 +168,15 @@ public class Pbank implements ActionListener, ComponentListener {
         } catch (Exception e) {
             System.out.println("Error: " + e.getMessage());
         }
-        
-        requestedDialog = DIALOG_NONE;
-        importState = IMPORT_STATE_INIT;
-        exportType = Config.TYPE_STACK;
-        
-        int d;
-        String templateDir, fileName;
-
-	templateDir = AppCore.getUserDir(Config.DIR_TEMPLATES);
-	fileName = templateDir + File.separator + "jpeg1.jpg";
-	File f = new File(fileName);
-	if (!f.exists()) {
-            System.out.println("xxx!!!");
-            for (int i = 0; i < AppCore.getDenominations().length; i++) {
-                d = AppCore.getDenominations()[i];
-                try {
-                    fileName = "jpeg" + d + ".jpg";
-                   
-                    copyFile(fileName, AppCore.getUserDir(Config.DIR_TEMPLATES) + File.separator + fileName);
-                } catch (IOException e) {
-                    System.out.println("ERROR copying templates" + e.getMessage());
-                }
-            }
+    }   
+     
+    public void initSystemUser(String user) {
+        try {
+            AppCore.initUserFolders(user);
+        } catch (Exception e) {
+            System.out.println("Error: " + e.getMessage());
         }
-       
+        
         sr = new ServantRegistry();
 	sr.registerServants(new String[]{
             "Echoer",
@@ -152,8 +186,15 @@ public class Pbank implements ActionListener, ComponentListener {
             "Authenticator",
             "Grader",
             "FrackFixer",
-            "Exporter"
-	}, AppCore.getRootPath(), wl);
+            "Exporter",
+            "Sender",
+            "Receiver",
+            "Backupper",
+            "LossFixer",
+            "ChangeMaker",
+            "Vaulter",
+            "ShowEnvelopeCoins"
+	}, AppCore.getRootPath() + File.separator + user, wl);
 
 	startEchoService();
     }
@@ -195,23 +236,7 @@ public class Pbank implements ActionListener, ComponentListener {
 }
     
     
-    public void copyFile(String src, String dst) throws IOException {
-        URL u = getClass().getClassLoader().getResource("resources/" + src);
-        
-        if (u == null)
-            return;
-        
-	InputStream in = new FileInputStream(u.getFile());
-	OutputStream out = new FileOutputStream(dst);
-
-	byte[] buf = new byte[1024];
-	int len;
-	while ((len = in.read(buf)) > 0)
-            out.write(buf, 0, len);
-
-        in.close();
-	out.close();
-    }
+    
     
     private void clearConsole() {
         try {
@@ -384,6 +409,7 @@ public class Pbank implements ActionListener, ComponentListener {
     
         
         initSystem();
+        //initSystemUser(Config.DIR_DEFAULT_USER);
         
         
         showMainScreen(null);
@@ -593,13 +619,13 @@ public class Pbank implements ActionListener, ComponentListener {
         xframeBank.setVisible(true);
     }
     
-    public void showImportScreen() {
+    public void showImportScreen(String user) {
         if (xframeImport != null) {
             xframeImport.setName("Autoclose");
             xframeImport.dispose();
         }
         
-        int totalFiles = AppCore.getFilesCount(Config.DIR_IMPORT);
+        int totalFiles = AppCore.getFilesCount(Config.DIR_IMPORT, user);
         
         int height = 340;
         if (importState == IMPORT_STATE_INIT) {
@@ -667,10 +693,10 @@ public class Pbank implements ActionListener, ComponentListener {
             }
             
             requestedDialog = DIALOG_IMPORT;
-            showImportScreen();
+            showImportScreen(Config.DIR_DEFAULT_USER);
         } else if (command.equals("DoImport")) {
             importState = IMPORT_STATE_UNPACKING;
-            showImportScreen();
+            showImportScreen(Config.DIR_DEFAULT_USER);
             startUnpackerService();
         } else if (command.equals("DoEmailReport")) {
             doEmailReceipt();
@@ -882,11 +908,11 @@ public class Pbank implements ActionListener, ComponentListener {
         
         Component c;
         if (screenNum == 1)
-            c = showImportScreenNoCoins();
+            c = showImportScreenNoCoins(Config.DIR_DEFAULT_USER);
         else if (screenNum == 2)
-            c = showImportScreenGetReady();
+            c = showImportScreenGetReady(Config.DIR_DEFAULT_USER);
         else if (screenNum == 3)
-            c = showImportScreenDoing();
+            c = showImportScreenDoing(Config.DIR_DEFAULT_USER);
         else if (screenNum == 4)
             c = showImportScreenDone();
         else if (screenNum == 5)
@@ -910,12 +936,12 @@ public class Pbank implements ActionListener, ComponentListener {
         return mainPanel;
     }
         
-    public Component showImportScreenNoCoins() {
+    public Component showImportScreenNoCoins(String user) {
         JPanel mainPanel = new JPanel();
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.PAGE_AXIS));
         mainPanel.setBackground(Color.WHITE); 
         
-        String importDir = AppCore.getUserDir(Config.DIR_IMPORT);
+        String importDir = AppCore.getUserDir(Config.DIR_IMPORT, user);
 	
         
         JLabel j = appUI.getJLabel("<html><p align='center'>There were no CloudCoins found<br>in your Import folder. "
@@ -930,7 +956,7 @@ public class Pbank implements ActionListener, ComponentListener {
         return mainPanel;
     }
     
-    public Component showImportScreenGetReady() {
+    public Component showImportScreenGetReady(String user) {
         JPanel mainPanel = new JPanel();
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.PAGE_AXIS));
         mainPanel.setBackground(Color.WHITE);
@@ -944,7 +970,7 @@ public class Pbank implements ActionListener, ComponentListener {
         JTextArea ja = appUI.getFolderTA("c:\\documents\\sasdfas\\fsafas\\dsadasdas\\dasdasdas\\file.txt");
         mainPanel.add(ja);
         
-        int total = AppCore.getFilesCount(Config.DIR_IMPORT);
+        int total = AppCore.getFilesCount(Config.DIR_IMPORT, user);
         j = appUI.getJLabel("<html><p align='center'>We are going to import " + 
                 total + " file(s). Click OK to continue</p></html>", Font.PLAIN, 12);
         mainPanel.add(j);
@@ -968,13 +994,13 @@ public class Pbank implements ActionListener, ComponentListener {
                 + processed + " of " + total + " CloudCoins</p></html>");
     }
     
-    public Component showImportScreenDoing() {
+    public Component showImportScreenDoing(String user) {
         JPanel mainPanel = new JPanel();
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.PAGE_AXIS));
         mainPanel.setBackground(Color.WHITE);
   
         jraida = appUI.getJLabel("", Font.PLAIN, 12);
-        setJraida(0, AppCore.getFilesCount(Config.DIR_SUSPECT));
+        setJraida(0, AppCore.getFilesCount(Config.DIR_SUSPECT, user));
         mainPanel.add(jraida);
   
         UIManager.put("ProgressBar.selectionForeground", Color.BLACK);
@@ -1143,7 +1169,7 @@ public class Pbank implements ActionListener, ComponentListener {
             importState = IMPORT_STATE_IMPORT;
             startAuthenticatorService();
 
-            showImportScreen();
+            showImportScreen(Config.DIR_DEFAULT_USER);
         }
     }
 
@@ -1178,7 +1204,7 @@ public class Pbank implements ActionListener, ComponentListener {
             statFailed = gr.totalLost + gr.totalCounterfeit + gr.totalUnchecked;
 
             importState = IMPORT_STATE_DONE;
-            showImportScreen();
+            showImportScreen(Config.DIR_DEFAULT_USER);
 	}
     }
 
