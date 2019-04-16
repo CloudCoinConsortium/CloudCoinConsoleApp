@@ -9,6 +9,7 @@ import global.cloudcoin.ccbank.FrackFixer.FrackFixer;
 import global.cloudcoin.ccbank.FrackFixer.FrackFixerResult;
 import global.cloudcoin.ccbank.Grader.Grader;
 import global.cloudcoin.ccbank.Grader.GraderResult;
+import global.cloudcoin.ccbank.ServantManager.ServantManager;
 import global.cloudcoin.ccbank.ShowCoins.ShowCoins;
 import global.cloudcoin.ccbank.ShowCoins.ShowCoinsResult;
 import global.cloudcoin.ccbank.Unpacker.Unpacker;
@@ -76,6 +77,7 @@ public class Pbank implements ActionListener, ComponentListener {
     JFrame mainFrame;
     
     ServantRegistry sr;
+    ServantManager sm;
     
     final static int ECHO_RESULT_DOING = 1;
     final static int ECHO_RESULT_DONE = 2;
@@ -140,7 +142,7 @@ public class Pbank implements ActionListener, ComponentListener {
                             dst += File.separator + fileName;
                             
                             System.out.println("x=" + entry.getName() );
-                            //System.out.println("copy " + src + " to " + dst);
+                            System.out.println("copy  to " + dst);
                             AppCore.copyFile(in, dst);
                         }
                     }
@@ -150,84 +152,32 @@ public class Pbank implements ActionListener, ComponentListener {
             }
         }
     }
-    /*
-    public void copyFile(String src, String dst) throws IOException {
-        URL u = getClass().getClassLoader().getResource("resources/" + src);
-        
-        if (u == null)
-            return;
-        
-	InputStream in = new FileInputStream(u.getFile());
-	OutputStream out = new FileOutputStream(dst);
-
-	byte[] buf = new byte[1024];
-	int len;
-	while ((len = in.read(buf)) > 0)
-            out.write(buf, 0, len);
-
-        in.close();
-	out.close();
-    }*/
+ 
+    public void error(String msg) {
+        System.out.println("Error: " + msg);
+        System.exit(1);
+    }
     
     public void initSystem() {
         wl = new WLogger();
         
-        AppCore.initPool();
         
+        String home = System.getProperty("user.home");
         
+        sm = new ServantManager(wl, home);
+        if (!sm.init()) 
+            error("Failed to init ServantManager");
         
         requestedDialog = DIALOG_NONE;
         importState = IMPORT_STATE_INIT;
         exportType = Config.TYPE_STACK;
-        
-        try {
-            String home = System.getProperty("user.home");
-            AppCore.initFolders(new File(home), wl);
-        } catch (Exception e) {
-            System.out.println("Error: " + e.getMessage());
-        }
     }   
      
     public void initSystemUser(String user, String email, String password) {
-        try {
-            AppCore.initUserFolders(user);
-        } catch (Exception e) {
-            System.out.println("Error: " + e.getMessage());
-        }
+        sm.initUser(user, email, password);
             
         copyTemplates(user);
-            
-        if (sr != null) {
-            sr.changeUser(user);
-        } else {      
-            sr = new ServantRegistry();
-            sr.registerServants(new String[]{
-                "Echoer",
-                "Authenticator",
-                "ShowCoins",
-                "Unpacker",
-                "Authenticator",
-                "Grader",
-                "FrackFixer",
-                "Exporter",
-                "Sender",
-                "Receiver",
-                "Backupper",
-                "LossFixer",
-                "ChangeMaker",
-                "Vaulter",
-                "ShowEnvelopeCoins"
-            }, AppCore.getRootPath() + File.separator + user, wl);
-            
-        }
-        
-        if (!email.equals(""))
-            sr.getServant("Authenticator").putConfigValue("email", email);
-        
-        if (!password.equals(""))
-            sr.getServant("Vaulter").putConfigValue("status", "on");
-        
-        AppCore.writeConfig(user, sr);
+      
         
 	//startEchoService();
     }
@@ -372,7 +322,6 @@ public class Pbank implements ActionListener, ComponentListener {
         }
         
         initSystemUser(wallet, email, password1);
-        System.out.println("xx=" + email + " p="+password1);
     }
     
     
@@ -398,7 +347,8 @@ public class Pbank implements ActionListener, ComponentListener {
     }
     
     private void showWalletMainScreen(String wallet, String error) {
-        
+        sm.setActiveWallet(wallet);
+        sm.startEchoService(new EchoCb());
         
         showTitle("Select action for wallet " + wallet, error);
 
