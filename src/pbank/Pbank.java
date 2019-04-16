@@ -44,6 +44,8 @@ import java.net.URLClassLoader;
 import java.net.URLEncoder;
 import java.util.*;
 import java.util.List;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import javax.imageio.ImageIO;
 import javax.imageio.spi.ServiceRegistry;
 import javax.swing.border.Border;
@@ -121,14 +123,30 @@ public class Pbank implements ActionListener, ComponentListener {
                 fileName = "jpeg" + d + ".jpg";
                    
                 URL u = getClass().getClassLoader().getResource("resources/" + fileName);
-                if (u != null) {
-                    String src = u.getFile();
-                    String dst = AppCore.getUserDir(Config.DIR_TEMPLATES, user);
-                        
-                    AppCore.copyFile(src, dst);
-                }
+                String url = u.toString();
+                int bang = url.indexOf("!");
+                String JAR_URI_PREFIX = "jar:file:";
+                JarFile jf;
+                
+                try {
+                    jf = new JarFile(url.substring(JAR_URI_PREFIX.length(), bang)) ;
+                
+                    for (Enumeration<JarEntry> entries = jf.entries(); entries.hasMoreElements();) {
+                        JarEntry entry = entries.nextElement();
                     
-                //copyFile(fileName, AppCore.getUserDir(Config.DIR_TEMPLATES) + File.separator + fileName);
+                        if (entry.getName().equals("resources/" + fileName)) {
+                            InputStream in = jf.getInputStream(entry);
+                            String dst = AppCore.getUserDir(Config.DIR_TEMPLATES, user);
+                            dst += File.separator + fileName;
+                            
+                            System.out.println("x=" + entry.getName() );
+                            //System.out.println("copy " + src + " to " + dst);
+                            AppCore.copyFile(in, dst);
+                        }
+                    }
+                } catch (IOException e) {
+                    return ;
+                }          
             }
         }
     }
@@ -170,33 +188,48 @@ public class Pbank implements ActionListener, ComponentListener {
         }
     }   
      
-    public void initSystemUser(String user) {
+    public void initSystemUser(String user, String email, String password) {
         try {
             AppCore.initUserFolders(user);
         } catch (Exception e) {
             System.out.println("Error: " + e.getMessage());
         }
+            
+        copyTemplates(user);
+            
+        if (sr != null) {
+            sr.changeUser(user);
+        } else {      
+            sr = new ServantRegistry();
+            sr.registerServants(new String[]{
+                "Echoer",
+                "Authenticator",
+                "ShowCoins",
+                "Unpacker",
+                "Authenticator",
+                "Grader",
+                "FrackFixer",
+                "Exporter",
+                "Sender",
+                "Receiver",
+                "Backupper",
+                "LossFixer",
+                "ChangeMaker",
+                "Vaulter",
+                "ShowEnvelopeCoins"
+            }, AppCore.getRootPath() + File.separator + user, wl);
+            
+        }
         
-        sr = new ServantRegistry();
-	sr.registerServants(new String[]{
-            "Echoer",
-            "Authenticator",
-            "ShowCoins",
-            "Unpacker",
-            "Authenticator",
-            "Grader",
-            "FrackFixer",
-            "Exporter",
-            "Sender",
-            "Receiver",
-            "Backupper",
-            "LossFixer",
-            "ChangeMaker",
-            "Vaulter",
-            "ShowEnvelopeCoins"
-	}, AppCore.getRootPath() + File.separator + user, wl);
-
-	startEchoService();
+        if (!email.equals(""))
+            sr.getServant("Authenticator").putConfigValue("email", email);
+        
+        if (!password.equals(""))
+            sr.getServant("Vaulter").putConfigValue("status", "on");
+        
+        AppCore.writeConfig(user, sr);
+        
+	//startEchoService();
     }
     
     public void startEchoService() {
@@ -323,6 +356,7 @@ public class Pbank implements ActionListener, ComponentListener {
        
         email = readItem();
         
+        
         System.out.println("Enter the encryption password. Leave blank if not needed");
         showCursor();
         
@@ -337,6 +371,7 @@ public class Pbank implements ActionListener, ComponentListener {
             }
         }
         
+        initSystemUser(wallet, email, password1);
         System.out.println("xx=" + email + " p="+password1);
     }
     
@@ -375,6 +410,8 @@ public class Pbank implements ActionListener, ComponentListener {
         showCursor();
         
         String val = readItem();
+        
+        
         if (val.equals("1")) {
             
         } else if (val.equals("2")) {
@@ -398,7 +435,11 @@ public class Pbank implements ActionListener, ComponentListener {
                    new BufferedReader(new InputStreamReader(System.in));
             val = reader.readLine();
         } catch (IOException e) {
-            return null;
+            System.exit(0);
+        }
+        
+        if (val == null) {
+            System.exit(0);
         }
         
         return val;
