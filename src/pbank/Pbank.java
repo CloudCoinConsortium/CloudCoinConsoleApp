@@ -18,6 +18,7 @@ import global.cloudcoin.ccbank.core.CallbackInterface;
 import global.cloudcoin.ccbank.core.Config;
 import global.cloudcoin.ccbank.core.GLogger;
 import global.cloudcoin.ccbank.core.ServantRegistry;
+import global.cloudcoin.ccbank.core.Wallet;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -63,6 +64,25 @@ import pbank.ImageJPanel;
  */
 public class Pbank implements ActionListener, ComponentListener {
 
+    final static int SCREEN_EXIT = 0;
+    final static int SCREEN_MAIN = 1;
+    final static int SCREEN_SELECT_WALLET = 2;
+    final static int SCREEN_CREATE_WALLET = 3;
+    final static int SCREEN_MAIN_WALLET = 4;
+    final static int SCREEN_DEPOSIT = 5;
+    final static int SCREEN_WITHDRAW = 6;
+    final static int SCREEN_SHOW_COINS = 7;
+    final static int SCREEN_SHOW_TRANSACTIONS = 8;
+    final static int SCREEN_TRANSFER = 9;
+    final static int SCREEN_DEPOSITING = 10;
+    
+    int currentScreen;
+    String currentWallet;
+    String currentMessage;
+    String currentError;
+    
+    String currentImportStr;
+    
     int tw = 450;
     int th = 800;
     
@@ -112,50 +132,27 @@ public class Pbank implements ActionListener, ComponentListener {
     
     WLogger wl;
     
-    public void copyTemplates(String user) {
-        int d;
-        String templateDir, fileName;
-
-	templateDir = AppCore.getUserDir(Config.DIR_TEMPLATES, user);
-	fileName = templateDir + File.separator + "jpeg1.jpg";
-	File f = new File(fileName);
-	if (!f.exists()) {
-            for (int i = 0; i < AppCore.getDenominations().length; i++) {
-                d = AppCore.getDenominations()[i];
-                fileName = "jpeg" + d + ".jpg";
-                   
-                URL u = getClass().getClassLoader().getResource("resources/" + fileName);
-                String url = u.toString();
-                int bang = url.indexOf("!");
-                String JAR_URI_PREFIX = "jar:file:";
-                JarFile jf;
-                
-                try {
-                    jf = new JarFile(url.substring(JAR_URI_PREFIX.length(), bang)) ;
-                
-                    for (Enumeration<JarEntry> entries = jf.entries(); entries.hasMoreElements();) {
-                        JarEntry entry = entries.nextElement();
-                    
-                        if (entry.getName().equals("resources/" + fileName)) {
-                            InputStream in = jf.getInputStream(entry);
-                            String dst = AppCore.getUserDir(Config.DIR_TEMPLATES, user);
-                            dst += File.separator + fileName;
-                            
-                            System.out.println("x=" + entry.getName() );
-                            System.out.println("copy  to " + dst);
-                            AppCore.copyFile(in, dst);
-                        }
-                    }
-                } catch (IOException e) {
-                    return ;
-                }          
-            }
-        }
-    }
+    
  
     public void error(String msg) {
         System.out.println("Error: " + msg);
         System.exit(1);
+    }
+    
+    public void unsetError() {
+        setError(null);
+    }
+    
+    public void setError(String error) {
+        currentError = error;
+    }
+    
+    public void setScreen(int screen) {
+        currentScreen = screen;
+    }
+    
+    public void setWallet(String wallet) {
+        currentWallet = wallet;
     }
     
     public void initSystem() {
@@ -168,6 +165,8 @@ public class Pbank implements ActionListener, ComponentListener {
         if (!sm.init()) 
             error("Failed to init ServantManager");
         
+        setScreen(SCREEN_MAIN);
+        
         requestedDialog = DIALOG_NONE;
         importState = IMPORT_STATE_INIT;
         exportType = Config.TYPE_STACK;
@@ -176,47 +175,21 @@ public class Pbank implements ActionListener, ComponentListener {
     public void initSystemUser(String user, String email, String password) {
         sm.initUser(user, email, password);
             
-        copyTemplates(user);
-      
-        
-	//startEchoService();
+        AppCore.copyTemplatesFromJar(user);
     }
     
-    public void startEchoService() {
-	echoResult = ECHO_RESULT_DOING;
-
-	Echoer e = (Echoer) sr.getServant("Echoer");
-	e.launch(new EchoCb());
-    }
+    
     
     public void startShowCoinsService() {
 	ShowCoins sc = (ShowCoins) sr.getServant("ShowCoins");
 	sc.launch(new ShowCoinsCb());
     }
     
-    public void startUnpackerService() {
-	Unpacker up = (Unpacker) sr.getServant("Unpacker");
-	up.launch(new UnpackerCb());
-    }
+   
 
-    public void startAuthenticatorService() {
-	at = (Authenticator) sr.getServant("Authenticator");
-	at.launch(new AuthenticatorCb());
-    }
     
-    public void startGraderService() {
-	Grader gd = (Grader) sr.getServant("Grader");
-	gd.launch(new GraderCb());
-    }
 
-    public void startFrackFixerService() {
-	if (sr.isRunning("FrackFixer")) {
-        	return;
-	}
-
-	FrackFixer ff = (FrackFixer) sr.getServant("FrackFixer");
-	ff.launch(new FrackFixererCb());
-}
+  
     
     
     
@@ -225,11 +198,13 @@ public class Pbank implements ActionListener, ComponentListener {
         try {
             final String os = System.getProperty("os.name");
             if (os.contains("Windows")) {
-                String[] cls = new String[] {"cmd.exe", "/c", "cls"};
-                Runtime.getRuntime().exec(cls); 
-                for (int i = 0; i < 250; ++i) System.out.println();
+                //String[] cls = new String[] {"cmd.exe", "/c", "cls"};
+                //Runtime.getRuntime().exec(cls); 
+                //for (int i = 0; i < 250; ++i) System.out.println();
                 new ProcessBuilder("cmd.exe", "/c", "cls").inheritIO().start().waitFor();
             } else {
+                System.out.print("\033[H\033[2J");  
+                System.out.flush();  
                 Runtime.getRuntime().exec("clear");
             }
         } catch (final Exception e) {
@@ -237,7 +212,7 @@ public class Pbank implements ActionListener, ComponentListener {
         }
     }
     
-    private void showTitle(String title, String error) {
+    private void showTitle(String title) {
         clearConsole();
         System.out.println("*** CloudCoin Console Client ***");
         System.out.println();
@@ -245,8 +220,8 @@ public class Pbank implements ActionListener, ComponentListener {
         System.out.println(title);
         System.out.println();   
         
-        if (error != null)
-            showError(error);
+        if (currentError != null)
+            showError(currentError);
         
     }
     
@@ -254,60 +229,91 @@ public class Pbank implements ActionListener, ComponentListener {
         System.out.println();
         System.out.println("ERROR: " + error);
         System.out.println();
+        
+        unsetError();
     }
+    
+    private void waitForKey() {
+        System.out.println();
+        System.out.println("Press Enter to continue...");
+        readItem();
+    }
+    
+    private void showMessage(String message) {
+        clearConsole();
+        System.out.println();
+        System.out.println(message);
+        System.out.println();
+        System.out.println("Press Enter to continue...");
+        readItem();
+    }
+    
     
     private void showCursor() {
         System.out.println();
         System.out.print(">>>");
     }
     
-    private void showMainScreen(String error) {
-        showTitle("Select action", error);
-
-        System.out.println("1. Show Wallets");
-        System.out.println("2. Create Wallet");
+    private void showBasicScreen(String[] items, int[] screens) {
+        int i;
         
-        System.out.println();
-        System.out.print(">>>");
+        if (items.length != screens.length)
+            return;
         
-        String val = readItem();
-        if (val.equals("1")) {
-            showWalletsScreen(null);
-        } else if (val.equals("2")) {
-            showCreateWalletScreen(null);
-        } else if (val.equals("3")) {
-           
-        } else if (val.equals("4")) {       
-            
-        } else {
-            showMainScreen("Invalid input");
+        for (i = 0; i < items.length; i++) {
+            System.out.println((i + 1) + ". " + items[i]);
         }
+        
+        showCursor();
+        String val = readItem();
+        
+        int ival;
+        try {
+            ival = Integer.parseInt(val);
+        } catch (NumberFormatException e) {
+            setError("Invalid input");
+            return;
+        }
+        
+        if (ival == 0 || ival > items.length) {
+            setError("Invalid input");
+            return;
+        }
+        
+        setScreen(screens[ival - 1]);
         
     }
     
-    private void showCreateWalletScreen(String error) {
+    private void showMainScreen() {
+        showTitle("Select action");
+        
+        showBasicScreen(new String[] {
+            "Select Wallet", "Create Wallet", "Exit"
+        }, new int[] { SCREEN_SELECT_WALLET, SCREEN_CREATE_WALLET, SCREEN_EXIT });
+    }
+    
+    private void showCreateWalletScreen() {
         String val, email, wallet, password1, password2;
-        showTitle("Create wallet. Enter the name of the wallet: ", error);
+        showTitle("Create wallet. Enter the name of the wallet: ");
         showCursor();
         
         wallet = readItem();
         if (wallet.length() > Config.MAX_WALLET_LENGTH) {
-            showCreateWalletScreen("The length is too big");
+            setError("The length is too big");
             return;
         }
         
         if (wallet.contains("\\") || wallet.contains("/")) {
-            showCreateWalletScreen("Invalid charaters");
+            setError("Invalid chacaters");
             return;
         }
 
-        System.out.println("Enter the recovery email. Leave blank if not needed");
+        System.out.print("Enter the recovery email. Leave blank if not needed");
         showCursor();
        
         email = readItem();
-        
-        
-        System.out.println("Enter the encryption password. Leave blank if not needed");
+            
+        System.out.print("Enter the encryption password. Leave blank if not needed");
         showCursor();
         
         password1 = readItem();
@@ -316,66 +322,136 @@ public class Pbank implements ActionListener, ComponentListener {
             showCursor();
             password2 = readItem();
             if (!password1.equals(password2)) {
-                showCreateWalletScreen("Password mismatch");
+                setError("Password mismatch");
                 return;
             }
         }
         
         initSystemUser(wallet, email, password1);
+        
+        showMessage("The wallet has been created");
+        
+        setScreen(SCREEN_MAIN);
     }
     
     
     
-    private void showWalletsScreen(String error) {
-        showTitle("Wallets", error);
+    private void showWalletsScreen() {
+        showTitle("Wallets");
         
         String[] wallets = AppCore.getDirs();
         for (int i = 0; i < wallets.length; i++) {
             System.out.println((i + 1)+ ". " + wallets[i]);
         }
         
+        System.out.println((wallets.length + 1) + ". Back");
         showCursor();
     
         String val = readItem();
         int idx = Integer.parseInt(val);
-        if (idx <= 0 || idx > wallets.length) {
-            showWalletsScreen("Invalid Wallet " + idx);
+        if (idx == wallets.length + 1) {
+            setScreen(SCREEN_MAIN);
             return;
         }
         
-        showWalletMainScreen(wallets[idx - 1], null);
-    }
-    
-    private void showWalletMainScreen(String wallet, String error) {
-        sm.setActiveWallet(wallet);
-        sm.startEchoService(new EchoCb());
-        
-        showTitle("Select action for wallet " + wallet, error);
-
-        System.out.println("1. Deposit Coins");
-        System.out.println("2. Show Coins");
-        System.out.println("3. Withdraw Coins");
-        System.out.println("4. Transfer Coins");
-
-        showCursor();
-        
-        String val = readItem();
-        
-        
-        if (val.equals("1")) {
-            
-        } else if (val.equals("2")) {
-            
-        } else if (val.equals("3")) {
-            
-        } else if (val.equals("4")) {
-            
-        } else {
-            showMainScreen("Invalid input");
+        if (idx <= 0 || idx > wallets.length) {
+            setError("Invalid Wallet");
+            return;
         }
         
         
+        if (currentWallet == null || wallets[idx - 1].equals(currentWallet)) {
+            setWallet(wallets[idx - 1]);
+            sm.setActiveWallet(currentWallet);
+        }
+      
         
+        setScreen(SCREEN_MAIN_WALLET);
+    }
+    
+    private void showWalletMainScreen() {    
+        sm.startEchoService(new EchoCb());
+        
+        showTitle("Select action for wallet " + currentWallet);
+        
+        showBasicScreen(new String[] {"Deposit Coins", "Show Coins", 
+            "Withdraw Coins", "Transfer Coins", "Show Transactions", "Back"
+        }, new int[] {  SCREEN_DEPOSIT, SCREEN_SHOW_COINS, SCREEN_WITHDRAW,
+            SCREEN_TRANSFER, SCREEN_SHOW_TRANSACTIONS, SCREEN_SELECT_WALLET 
+        });      
+    }
+    
+    private void showWalletTransactionsScreen() {
+        showTitle("Transactions");
+        
+        Wallet w = new Wallet(currentWallet, wl);
+        //w.appendTransaction("xxx", -1000);
+        String[][] ts = w.getTransactions();
+        if (ts == null) {
+            setError("Failed to get transactions");
+            return;
+        }
+        
+        System.out.format("%32s    %10s   %10s   %10s   %10s", "Memo", "Date", "Deposit", "Withdraw", "Total");
+        System.out.println();
+        for (int i = 0; i < ts.length; i++) {
+            System.out.format("%32s  %12s   %10s   %10s   %10s", ts[i][0], ts[i][1], ts[i][2], ts[i][3], ts[i][4]);
+            System.out.println();
+        }
+        
+        setScreen(SCREEN_MAIN_WALLET);
+        waitForKey();
+    }
+    
+    public void showWalletDepositScreen() {
+        showMessage("Put your coins to the " + AppCore.getUserDir(Config.DIR_IMPORT, currentWallet) + ""
+                + "\nDo not interrupt the process");
+        
+        importState = IMPORT_STATE_UNPACKING;
+        
+        sm.startUnpackerService(new UnpackerCb());
+        
+        setScreen(SCREEN_DEPOSITING);
+        
+        
+    }
+    
+    public void doSleep(int ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            
+        }
+    }
+    
+    public void showWalletDepositingScreen() {
+        showTitle("Depositing Coins");
+        
+        //while (true) {
+        if (importState == IMPORT_STATE_UNPACKING) {
+            System.out.println("Unpacking...");
+            doSleep(200);
+            return;                
+        }
+            
+        if (importState == IMPORT_STATE_IMPORT) {
+            System.out.println("Importing...");
+            System.out.println("stat");
+            System.out.println(currentImportStr);
+            doSleep(200);
+            return;
+        }
+           
+        if (importState == IMPORT_STATE_DONE) {
+            System.out.println("Total coins moved to Bank: " + statToBankValue);
+            System.out.println("Total authentic coins: " + statToBank);
+            System.out.println("Total counterfeit: " + statFailed);
+            
+            waitForKey();
+            
+            setScreen(SCREEN_MAIN_WALLET);
+            return;
+        }
     }
     
     private String readItem() {
@@ -400,10 +476,48 @@ public class Pbank implements ActionListener, ComponentListener {
     
         
         initSystem();
-        //initSystemUser(Config.DIR_DEFAULT_USER);
         
-        
-        showMainScreen(null);
+        while (true) {
+ 
+            switch (currentScreen) {
+                case SCREEN_MAIN:
+                    showMainScreen();
+                    break;
+                case SCREEN_EXIT:
+                    System.exit(0);
+                    break;
+                case SCREEN_SELECT_WALLET:
+                    showWalletsScreen();
+                    break;
+                case SCREEN_MAIN_WALLET:
+                    showWalletMainScreen();
+                    break;
+                case SCREEN_CREATE_WALLET:
+                    showCreateWalletScreen();
+                    break;
+                case SCREEN_SHOW_TRANSACTIONS:
+                    showWalletTransactionsScreen();
+                    break;
+                case SCREEN_DEPOSIT:
+                    showWalletDepositScreen();
+                    break;
+                case SCREEN_DEPOSITING:
+                    showWalletDepositingScreen();
+                    break;
+                    
+                    
+            }
+            /*
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                
+            }*/
+            
+            if (1 == 0)
+                break;
+            
+        }
   
             
        
@@ -661,15 +775,7 @@ public class Pbank implements ActionListener, ComponentListener {
         xframeImport.setVisible(true);
     }
     
-    public void showMessage(String text) {
-        Toast t = new Toast(text, mainFrame);
-        t.showtoast();
-    }
-    /*
-    public void showError(String text) {
-        showMessage(text);
-    }*/
-    
+   
     public void actionPerformed(ActionEvent e) { 
         String command = ((JButton) e.getSource()).getActionCommand();
         if (command.equals("BANK")) {
@@ -688,7 +794,7 @@ public class Pbank implements ActionListener, ComponentListener {
         } else if (command.equals("DoImport")) {
             importState = IMPORT_STATE_UNPACKING;
             showImportScreen(Config.DIR_DEFAULT_USER);
-            startUnpackerService();
+            //startUnpackerService();
         } else if (command.equals("DoEmailReport")) {
             doEmailReceipt();
         } else if (command.equals("WITHDRAW")) {
@@ -975,23 +1081,21 @@ public class Pbank implements ActionListener, ComponentListener {
         return mainPanel;
     }
     
-    private void setRAIDAProgress(int raidaProcessed, int totalFilesProcessed, int totalFiles) {
-        pbar.setValue(raidaProcessed);
-        setJraida(totalFilesProcessed, totalFiles);
+    private void setRAIDAProgress(int raidaProcessed, int totalFilesProcessed, int totalFiles) {  
+        currentImportStr = "Authenticated " + totalFilesProcessed + " of " + totalFiles + " CloudCoins" + System.lineSeparator();
+        for (int i = 0; i < raidaProcessed; i++)
+            currentImportStr += ".";
+                    
+        currentImportStr += System.lineSeparator();
     }
-    
-    private void setJraida(int processed, int total) {
-        jraida.setText("<html><p align='center'>Authenticated " 
-                + processed + " of " + total + " CloudCoins</p></html>");
-    }
-    
+ 
     public Component showImportScreenDoing(String user) {
         JPanel mainPanel = new JPanel();
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.PAGE_AXIS));
         mainPanel.setBackground(Color.WHITE);
   
         jraida = appUI.getJLabel("", Font.PLAIN, 12);
-        setJraida(0, AppCore.getFilesCount(Config.DIR_SUSPECT, user));
+       
         mainPanel.add(jraida);
   
         UIManager.put("ProgressBar.selectionForeground", Color.BLACK);
@@ -1132,9 +1236,7 @@ public class Pbank implements ActionListener, ComponentListener {
     
     class EchoCb implements CallbackInterface {
 	public void callback(Object result) {
-            //System.out.println("DONE ECHO");
-            echoResult = ECHO_RESULT_DONE;
-            startFrackFixerService();
+            sm.startFrackFixerService(new FrackFixerCb());
 	}  
     }
     
@@ -1157,10 +1259,10 @@ public class Pbank implements ActionListener, ComponentListener {
             } catch (InterruptedException e) {
 
             }
+            
             importState = IMPORT_STATE_IMPORT;
-            startAuthenticatorService();
-
-            showImportScreen(Config.DIR_DEFAULT_USER);
+            sm.startAuthenticatorService(new AuthenticatorCb());
+ 
         }
     }
 
@@ -1171,14 +1273,17 @@ public class Pbank implements ActionListener, ComponentListener {
             AuthenticatorResult ar = (AuthenticatorResult) fresult;
 
             if (ar.status == AuthenticatorResult.STATUS_ERROR) {
-                importState = IMPORT_STATE_INIT;	
-                showError("Internal error");
-                xframeImport.dispose();
+                importState = IMPORT_STATE_INIT;
+                setScreen(SCREEN_MAIN_WALLET);
+                setError("Import failed");
                 return;
             } else if (ar.status == AuthenticatorResult.STATUS_FINISHED) {
-                startGraderService();
+                sm.startGraderService(new GraderCb());
                 return;
             } else if (ar.status == AuthenticatorResult.STATUS_CANCELLED) {
+                importState = IMPORT_STATE_INIT;
+                setError("Cancelled");
+                setScreen(SCREEN_MAIN_WALLET);
                 return;
             }
 
@@ -1195,11 +1300,10 @@ public class Pbank implements ActionListener, ComponentListener {
             statFailed = gr.totalLost + gr.totalCounterfeit + gr.totalUnchecked;
 
             importState = IMPORT_STATE_DONE;
-            showImportScreen(Config.DIR_DEFAULT_USER);
 	}
     }
 
-    class FrackFixererCb implements CallbackInterface {
+    class FrackFixerCb implements CallbackInterface {
 	public void callback(Object result) {
             FrackFixerResult fr = (FrackFixerResult) result;
 
