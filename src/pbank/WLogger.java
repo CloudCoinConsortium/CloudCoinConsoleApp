@@ -16,12 +16,21 @@ public class WLogger extends GLogger implements GLoggerInterface {
 
     @Override
     public void onLog(int level, String tag, String message) {
+        String levelStr; 
+        
         if (level == GL_DEBUG) {
         //    System.out.println("tag: " + tag + " " + message);
+            levelStr = "[DEBUG]";
         } else if (level == GL_VERBOSE) {
         //    System.out.println("tag: " + tag + " " + message);
-        } else {
+            levelStr = "[VERBOSE]";
+        } else if (level == GL_ERROR) {
         //    System.out.println("tag: " + tag + " " + message);
+            levelStr = "[ERROR]";
+        } else {
+            levelStr = "[INFO]";
         }
+        
+        logCommon(tag + " " + levelStr + " " + message);
     }
 }
