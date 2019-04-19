@@ -79,6 +79,7 @@ public class Pbank implements ActionListener, ComponentListener {
     final static int SCREEN_SHOW_COINS_RESULT = 11;
     final static int SCREEN_WITHDRAW_RESULT = 12;
     final static int SCREEN_WITHDRAW_RESULT1 = 13;
+    final static int SCREEN_CREATE_SKYWALLET = 14;
 
     
     int currentScreen;
@@ -167,7 +168,7 @@ public class Pbank implements ActionListener, ComponentListener {
     
     public void setWallet(String wallet) {
         currentWallet = wallet;
-        sm.setActiveWallet(currentWallet);
+        sm.setActiveWallet(wallet);
     }
     
     public void initSystem() {
@@ -308,6 +309,30 @@ public class Pbank implements ActionListener, ComponentListener {
         }, new int[] { SCREEN_SELECT_WALLET, SCREEN_CREATE_WALLET, SCREEN_EXIT });
     }
     
+    private void showCreateSkyWalletScreen() {
+        String path;
+        
+        showTitle("Create Sky Wallet. Enter the path of the ID Coin: ");
+        showCursor();
+        
+        path = readItem();
+        File f = new File(path);
+        if (!f.exists()) {
+            setError("File does not exist");
+            setScreen(SCREEN_MAIN_WALLET);
+            return;
+        }
+        
+        if (!AppCore.moveToFolder(path, Config.DIR_ID, currentWallet)) {
+            setError("Failed to move ID coin");
+            setScreen(SCREEN_MAIN_WALLET);
+            return;
+        }
+        
+        showMessage("The SkyWallet has been created");
+        setScreen(SCREEN_MAIN_WALLET);
+    }
+    
     private void showCreateWalletScreen() {
         String val, email, wallet, password1, password2;
         showTitle("Create wallet. Enter the name of the wallet: ");
@@ -355,16 +380,43 @@ public class Pbank implements ActionListener, ComponentListener {
     private void showWalletsScreen() {
         showTitle("Wallets");
         
-        String[] wallets = AppCore.getDirs();
+        System.out.println("R - recovery enabled, E - encrypted, S - Sky Wallet");
+        System.out.println();
+        
+        Wallet[] wallets = sm.getWallets();
         for (int i = 0; i < wallets.length; i++) {
-            System.out.println((i + 1)+ ". " + wallets[i]);
+            Wallet w = wallets[i];
+                 
+            String prefix = "";
+            if (!w.getEmail().equals("")) 
+                prefix += "R";
+            
+            if (w.isEncrypted())
+                prefix += "E";
+            
+            if (w.isSkyWallet())
+                prefix += "S";
+            
+            System.out.print((i + 1)+ ". " + wallets[i].getName());
+            if (!prefix.equals(""))
+                System.out.print(" [ " + prefix + " ]");
+            
+            System.out.println();
         }
         
         System.out.println((wallets.length + 1) + ". Back");
         showCursor();
-    
+        
+        int idx;
         String val = readItem();
-        int idx = Integer.parseInt(val);
+        
+        try {
+            idx = Integer.parseInt(val);
+        } catch (NumberFormatException e) {
+            setError("Invalid Input");
+            return;
+        }
+        
         if (idx == wallets.length + 1) {
             setScreen(SCREEN_MAIN);
             return;
@@ -375,8 +427,9 @@ public class Pbank implements ActionListener, ComponentListener {
             return;
         }
               
-        if (currentWallet == null || !wallets[idx - 1].equals(currentWallet)) {
-            setWallet(wallets[idx - 1]);     
+        if (currentWallet == null || !wallets[idx - 1].getName().equals(currentWallet)) {
+            System.out.println("w="+wallets[idx-1].getName());
+            setWallet(wallets[idx - 1].getName());     
             if (sm.getActiveWallet().isEncrypted()) {
                 System.out.println("Unlock the wallet. Type password:");
                 String password = readItem();
@@ -394,9 +447,9 @@ public class Pbank implements ActionListener, ComponentListener {
         showTitle("Select action for wallet " + currentWallet);
         
         showBasicScreen(new String[] {"Deposit Coins", "Show Coins", 
-            "Withdraw Coins", "Transfer Coins", "Show Transactions", "Back"
+            "Withdraw Coins", "Transfer Coins", "Show Transactions", "Create Sky Wallet", "Back"
         }, new int[] {  SCREEN_DEPOSIT, SCREEN_SHOW_COINS, SCREEN_WITHDRAW,
-            SCREEN_TRANSFER, SCREEN_SHOW_TRANSACTIONS, SCREEN_SELECT_WALLET 
+            SCREEN_TRANSFER, SCREEN_SHOW_TRANSACTIONS, SCREEN_CREATE_SKYWALLET, SCREEN_SELECT_WALLET 
         });      
     }
     
@@ -424,6 +477,11 @@ public class Pbank implements ActionListener, ComponentListener {
     }
     
     public void showWalletDepositScreen() {
+        if (!sm.isEchoerFinished()) {
+            showMessage("Echoer is not finished. Please wait");
+            return;
+        }
+        
         showMessage("Put your coins to the " + AppCore.getUserDir(Config.DIR_IMPORT, currentWallet) + ""
                 + "\nDo not interrupt the process");
         
@@ -564,8 +622,11 @@ public class Pbank implements ActionListener, ComponentListener {
         showCursor();
         String tag = readItem();
         
-        
-        sm.startExporterService(type, amount, tag, new ExporterCb());
+        if (sm.getActiveWallet().isEncrypted()) {
+            sm.startSecureExporterService(type, amount, tag, new ExporterCb());
+        } else {
+            sm.startExporterService(type, amount, tag, new ExporterCb());
+        }
         
         
         cbState = CB_STATE_INIT;
@@ -573,14 +634,17 @@ public class Pbank implements ActionListener, ComponentListener {
     }
     
     public void showWalletWithdrawResult1() {     
-        showTitle("Result of the Export1");
+        showTitle("Result of the Export");
         
         if (cbState != CB_STATE_DONE) {
             doSleep(200);
             return;
         }
         
-        waitForKey();
+        if (currentError == null || currentError.equals(""))
+            showMessage("Exported successfully");
+        
+        cbState = CB_STATE_INIT;
         setScreen(SCREEN_MAIN_WALLET);
         
     }
@@ -649,6 +713,9 @@ public class Pbank implements ActionListener, ComponentListener {
                     break;
                 case SCREEN_WITHDRAW_RESULT1:
                     showWalletWithdrawResult1();
+                    break;
+                case SCREEN_CREATE_SKYWALLET:
+                    showCreateSkyWalletScreen();
                     break;
                     
                     
@@ -1351,7 +1418,6 @@ public class Pbank implements ActionListener, ComponentListener {
 
 
     public static void main(String[] args) {
-        System.out.println("sss");
         try {
             UIManager.setLookAndFeel("javax.swing.plaf.nimbus.NimbusLookAndFeel");
         } catch (Exception e) {
@@ -1386,6 +1452,7 @@ public class Pbank implements ActionListener, ComponentListener {
     
     class EchoCb implements CallbackInterface {
 	public void callback(Object result) {
+            System.out.println("Launch fracker");
             sm.startFrackFixerService(new FrackFixerCb());
 	}  
     }
@@ -1454,6 +1521,8 @@ public class Pbank implements ActionListener, ComponentListener {
             statToBank = gr.totalAuthentic + gr.totalFracked;
             statFailed = gr.totalLost + gr.totalCounterfeit + gr.totalUnchecked;
 
+            sm.getActiveWallet().appendTransaction("Import", statToBankValue);
+            
             if (!sm.getActiveWallet().isEncrypted()) {
                 importState = IMPORT_STATE_DONE;
             } else {
@@ -1494,6 +1563,7 @@ public class Pbank implements ActionListener, ComponentListener {
 		exportedFilenames = er.exportedFileNames;
                 cbState = CB_STATE_DONE;
                 
+                sm.getActiveWallet().appendTransaction("Export", er.totalExported * -1);
                 //xframeExport.dispose();
 		//showExportResult();
 		return;
