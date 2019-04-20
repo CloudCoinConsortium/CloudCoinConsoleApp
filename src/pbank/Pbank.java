@@ -2,13 +2,18 @@ package pbank;
 
 import global.cloudcoin.ccbank.Authenticator.Authenticator;
 import global.cloudcoin.ccbank.Authenticator.AuthenticatorResult;
+import global.cloudcoin.ccbank.Backupper.BackupperResult;
 import global.cloudcoin.ccbank.Echoer.Echoer;
+import global.cloudcoin.ccbank.Eraser.EraserResult;
 import global.cloudcoin.ccbank.Exporter.Exporter;
 import global.cloudcoin.ccbank.Exporter.ExporterResult;
 import global.cloudcoin.ccbank.FrackFixer.FrackFixer;
 import global.cloudcoin.ccbank.FrackFixer.FrackFixerResult;
 import global.cloudcoin.ccbank.Grader.Grader;
 import global.cloudcoin.ccbank.Grader.GraderResult;
+import global.cloudcoin.ccbank.LossFixer.LossFixerResult;
+import global.cloudcoin.ccbank.Receiver.ReceiverResult;
+import global.cloudcoin.ccbank.Sender.SenderResult;
 import global.cloudcoin.ccbank.ServantManager.ServantManager;
 import global.cloudcoin.ccbank.ShowCoins.ShowCoins;
 import global.cloudcoin.ccbank.ShowCoins.ShowCoinsResult;
@@ -65,6 +70,8 @@ import pbank.ImageJPanel;
  */
 public class Pbank implements ActionListener, ComponentListener {
 
+    String ltag = "Pbank";
+    
     final static int SCREEN_EXIT = 0;
     final static int SCREEN_MAIN = 1;
     final static int SCREEN_SELECT_WALLET = 2;
@@ -80,14 +87,19 @@ public class Pbank implements ActionListener, ComponentListener {
     final static int SCREEN_WITHDRAW_RESULT = 12;
     final static int SCREEN_WITHDRAW_RESULT1 = 13;
     final static int SCREEN_CREATE_SKYWALLET = 14;
+    final static int SCREEN_BACKUP_WALLET = 15;
+    final static int SCREEN_TRANSFER_RESULT = 16;
 
     
     int currentScreen;
     String currentWallet;
     String currentMessage;
     String currentError;
-    
     String currentImportStr;
+    
+    
+    String currentDstWallet;
+    
     
     int[][] counters;
     
@@ -333,6 +345,32 @@ public class Pbank implements ActionListener, ComponentListener {
         setScreen(SCREEN_MAIN_WALLET);
     }
     
+    public void showWalletBackupScreen() {
+        String path;
+        
+        if (sm.getActiveWallet().isSkyWallet()) {
+            setError("You cant backup SkyWallet");
+            setScreen(SCREEN_MAIN_WALLET);
+            return;
+        }
+        
+        showTitle("Backup Wallet. Please type the destination folder");
+        showCursor();
+        
+        path = readItem();
+        File f = new File(path);
+        if (!f.exists()) {
+            setError("Folder does not exist");
+            setScreen(SCREEN_MAIN_WALLET);
+            return;
+        }
+        
+        sm.startBackupperService(path, new BackupperCb());
+        
+        showMessage("The backup has been scheduled");
+        setScreen(SCREEN_MAIN_WALLET);
+    }
+    
     private void showCreateWalletScreen() {
         String val, email, wallet, password1, password2;
         showTitle("Create wallet. Enter the name of the wallet: ");
@@ -432,6 +470,7 @@ public class Pbank implements ActionListener, ComponentListener {
             setWallet(wallets[idx - 1].getName());     
             if (sm.getActiveWallet().isEncrypted()) {
                 System.out.println("Unlock the wallet. Type password:");
+                showCursor();
                 String password = readItem();
                 
                 sm.getActiveWallet().setPassword(password);
@@ -447,9 +486,11 @@ public class Pbank implements ActionListener, ComponentListener {
         showTitle("Select action for wallet " + currentWallet);
         
         showBasicScreen(new String[] {"Deposit Coins", "Show Coins", 
-            "Withdraw Coins", "Transfer Coins", "Show Transactions", "Create Sky Wallet", "Back"
+            "Withdraw Coins", "Transfer Coins", "Show Transactions", "Create Sky Wallet", 
+            "Backup", "Back"
         }, new int[] {  SCREEN_DEPOSIT, SCREEN_SHOW_COINS, SCREEN_WITHDRAW,
-            SCREEN_TRANSFER, SCREEN_SHOW_TRANSACTIONS, SCREEN_CREATE_SKYWALLET, SCREEN_SELECT_WALLET 
+            SCREEN_TRANSFER, SCREEN_SHOW_TRANSACTIONS, SCREEN_CREATE_SKYWALLET, 
+            SCREEN_BACKUP_WALLET, SCREEN_SELECT_WALLET 
         });      
     }
     
@@ -457,7 +498,6 @@ public class Pbank implements ActionListener, ComponentListener {
         showTitle("Transactions");
         
         Wallet w = sm.getActiveWallet();
-        //w.appendTransaction("xxx", -1000);
         String[][] ts = w.getTransactions();
         if (ts == null) {
             setError("Failed to get transactions");
@@ -649,6 +689,68 @@ public class Pbank implements ActionListener, ComponentListener {
         
     }
     
+    public void showWalletTransferScreen() {
+        showTitle("Transfer coins. Please type the destination wallet name");
+        
+        showCursor();
+        currentDstWallet = readItem();
+        
+        System.out.println("Please type the amount of coins:");
+        showCursor();
+        String amount = readItem();
+        
+        int total;
+        try {
+            total = Integer.parseInt(amount);
+        } catch (NumberFormatException e) {
+            setError("Invalid amount");
+            setScreen(SCREEN_MAIN_WALLET);
+            return;
+        }
+        
+        if (total <= 0) {
+            setError("Invalid amount");
+            setScreen(SCREEN_MAIN_WALLET);
+            return;
+        }
+        
+        System.out.println("Memo:");
+        showCursor();
+        String memo = readItem();
+        
+        cbState = CB_STATE_INIT;
+        
+        Wallet dstWallet = sm.getWallet(currentDstWallet);
+        if (dstWallet != null && dstWallet.isEncrypted()) {
+                System.out.println("Unlock the dst wallet. Type password:");
+                showCursor();
+                String password = readItem();
+                
+                dstWallet.setPassword(password);
+        }
+            
+        sm.transferCoins(currentWallet, currentDstWallet, sm.getActiveWallet().getIDCoin(),
+                total, memo, new SenderCb(), new ReceiverCb());
+        
+        
+        setScreen(SCREEN_TRANSFER_RESULT);
+        
+    }
+    
+    public void showWalletTransferResultScreen() {
+        showTitle("Transfer result");
+        
+        if (cbState != CB_STATE_DONE) {
+            doSleep(200);
+            return;
+        }
+                
+        cbState = CB_STATE_INIT;
+        waitForKey();
+        setScreen(SCREEN_MAIN);
+        
+    }
+    
     private String readItem() {
         String val = null;
         try {
@@ -716,6 +818,15 @@ public class Pbank implements ActionListener, ComponentListener {
                     break;
                 case SCREEN_CREATE_SKYWALLET:
                     showCreateSkyWalletScreen();
+                    break;
+                case SCREEN_BACKUP_WALLET:
+                    showWalletBackupScreen();
+                    break;
+                case SCREEN_TRANSFER:
+                    showWalletTransferScreen();
+                    break;
+                case SCREEN_TRANSFER_RESULT:
+                    showWalletTransferResultScreen();
                     break;
                     
                     
@@ -1463,12 +1574,7 @@ public class Pbank implements ActionListener, ComponentListener {
             ShowCoinsResult scresult = (ShowCoinsResult) fresult;
                  
             cbState = CB_STATE_DONE;
-            if (requestedDialog == DIALOG_BANK)
-                setCounters(scresult.counters);
-                //showBankScreen(scresult.counters);
-            else if (requestedDialog == DIALOG_EXPORT) {
-                //showExportScreen(scresult.counters);
-            }
+            setCounters(scresult.counters);  
         }
     }
     
@@ -1508,7 +1614,6 @@ public class Pbank implements ActionListener, ComponentListener {
                 return;
             }
 
-            System.out.println("xxx="+ ar.totalFiles);
             setRAIDAProgress(ar.totalRAIDAProcessed, ar.totalFilesProcessed, ar.totalFiles);
 	}
     }
@@ -1527,9 +1632,7 @@ public class Pbank implements ActionListener, ComponentListener {
                 importState = IMPORT_STATE_DONE;
             } else {
                 sm.startVaulterService(new VaulterCb());
-            }
-            
-            
+            }       
 	}
     }
 
@@ -1538,16 +1641,18 @@ public class Pbank implements ActionListener, ComponentListener {
             FrackFixerResult fr = (FrackFixerResult) result;
 
             if (fr.status == FrackFixerResult.STATUS_ERROR) {
-		//showError("Failed to fix");
+                wl.error(ltag, "Failed to fix");
 		return;
             }
 
             if (fr.status == FrackFixerResult.STATUS_FINISHED) {
 		if (fr.fixed + fr.failed > 0) {
-                   // showMessage("Fracker fixed: " + fr.fixed + ", failed: " + fr.failed);
+                    wl.debug(ltag, "Fracker fixed: " + fr.fixed + ", failed: " + fr.failed);
                     return;
 		}
             }
+            
+            sm.startLossFixerService(new LossFixerCb());
         }
     }
          
@@ -1564,8 +1669,6 @@ public class Pbank implements ActionListener, ComponentListener {
                 cbState = CB_STATE_DONE;
                 
                 sm.getActiveWallet().appendTransaction("Export", er.totalExported * -1);
-                //xframeExport.dispose();
-		//showExportResult();
 		return;
             }
 	}
@@ -1577,8 +1680,77 @@ public class Pbank implements ActionListener, ComponentListener {
             VaulterResult vresult = (VaulterResult) fresult;
             
             importState = IMPORT_STATE_DONE;
+            cbState = CB_STATE_DONE;
 
 	}
     }
+    
+    class LossFixerCb implements CallbackInterface {
+	public void callback(final Object result) {
+            LossFixerResult lr = (LossFixerResult) result;
+            
+            wl.debug(ltag, "LossFixer finished");
+            sm.startEraserService(new EraserCb());
+        }
+    }
+				
+    class BackupperCb implements CallbackInterface {
+	public void callback(final Object result) {
+            BackupperResult br = (BackupperResult) result;
+            
+            wl.debug(ltag, "Backupper finished");
+	}
+    }
 
+    class EraserCb implements CallbackInterface {
+        public void callback(final Object result) {
+            EraserResult er = (EraserResult) result;
+
+            wl.debug(ltag, "Eraser finished");
+	}
+    }
+    
+    class SenderCb implements CallbackInterface {
+	public void callback(Object result) {
+            SenderResult sr = (SenderResult) result;
+            
+            wl.debug(ltag, "Sender finished: " + sr.status);
+            cbState = CB_STATE_DONE;
+
+            if (sr.amount > 0) {
+                sm.getActiveWallet().appendTransaction(sr.memo, sr.amount * -1);
+                Wallet dstWallet = sm.getWallet(currentDstWallet);
+                if (dstWallet != null) {
+                    dstWallet.appendTransaction(sr.memo, sr.amount);
+                    if (dstWallet.isEncrypted()) {
+                        wl.debug(ltag, "Set wallet to " + currentDstWallet);
+                        sm.changeServantUser("Vaulter", currentDstWallet);
+                        sm.startVaulterService(new VaulterCb());          
+                    }
+                }            
+            }
+   
+            if (sr.status == SenderResult.STATUS_ERROR) {
+		setError("Failed to send. Please check amount of coins in the Wallet");
+		return;
+            }        
+	}
+    }
+    
+    class ReceiverCb implements CallbackInterface {
+	public void callback(Object result) {
+            ReceiverResult sr = (ReceiverResult) result;
+            
+            wl.debug(ltag, "Receiver finished");
+            
+            currentWallet = currentDstWallet;
+            if (!sm.getActiveWallet().isEncrypted()) {
+                cbState = IMPORT_STATE_DONE;
+            } else {
+                sm.startVaulterService(new VaulterCb());
+            }  
+            
+	}
+    }
+    
 }
