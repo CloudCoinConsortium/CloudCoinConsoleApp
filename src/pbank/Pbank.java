@@ -22,6 +22,7 @@ import global.cloudcoin.ccbank.Vaulter.VaulterResult;
 import global.cloudcoin.ccbank.core.AppCore;
 import global.cloudcoin.ccbank.core.CallbackInterface;
 import global.cloudcoin.ccbank.core.Config;
+import global.cloudcoin.ccbank.core.DNSSn;
 import global.cloudcoin.ccbank.core.GLogger;
 import global.cloudcoin.ccbank.core.ServantRegistry;
 import global.cloudcoin.ccbank.core.Wallet;
@@ -222,8 +223,6 @@ public class Pbank implements ActionListener, ComponentListener {
     
     
     private void clearConsole() {
-        if (1==1)
-        return;
         try {
             final String os = System.getProperty("os.name");
             if (os.contains("Windows")) {
@@ -243,8 +242,8 @@ public class Pbank implements ActionListener, ComponentListener {
     
     private void showTitle(String title) {
         clearConsole();
-        System.out.println("*** CloudCoin Console Client ***");
         System.out.println();
+        System.out.println("*** CloudCoin Console Client ***");
         System.out.println();
         System.out.println(title);
         System.out.println();   
@@ -324,22 +323,43 @@ public class Pbank implements ActionListener, ComponentListener {
     private void showCreateSkyWalletScreen() {
         String path;
         
-        showTitle("Create Sky Wallet. Enter the path of the ID Coin: ");
-        showCursor();
+        showTitle("Create Sky Wallet");
         
-        path = readItem();
-        File f = new File(path);
-        if (!f.exists()) {
-            setError("File does not exist");
+        System.out.println("Enter the name of the wallet");
+        showCursor();
+        String name = readItem();
+        
+        DNSSn d = new DNSSn(name, wl);
+      
+        if (d.recordExists()) {
+            setError("DNS record already exists");
             setScreen(SCREEN_MAIN_WALLET);
             return;
         }
         
-        if (!AppCore.moveToFolder(path, Config.DIR_ID, currentWallet)) {
+        
+                
+        System.out.println("Enter the path of the ID Coin: ");
+        showCursor();
+        
+        path = readItem();
+        
+        if (!d.setRecord(path, sm.getSR())) {
+            setError("Failed to set record. Check if the coin is valid");
+            setScreen(SCREEN_MAIN_WALLET);
+            return;
+        }
+        
+        String newFileName = name + ".stack";
+        
+        
+        if (!AppCore.moveToFolderNewName(path, Config.DIR_ID, currentWallet, newFileName)) {
             setError("Failed to move ID coin");
             setScreen(SCREEN_MAIN_WALLET);
             return;
         }
+        
+        
         
         showMessage("The SkyWallet has been created");
         setScreen(SCREEN_MAIN_WALLET);
@@ -485,13 +505,29 @@ public class Pbank implements ActionListener, ComponentListener {
         
         showTitle("Select action for wallet " + currentWallet);
         
-        showBasicScreen(new String[] {"Deposit Coins", "Show Coins", 
+        String[] ws;
+        int[] rv;
+        if (sm.getActiveWallet().isSkyWallet()) {
+            ws = new String[] {"Deposit Coins", "Show Coins", 
+            "Withdraw Coins", "Transfer Coins", "Show Transactions", 
+            "Backup", "Back" };
+        
+            rv = new int[] {  SCREEN_DEPOSIT, SCREEN_SHOW_COINS, SCREEN_WITHDRAW,
+            SCREEN_TRANSFER, SCREEN_SHOW_TRANSACTIONS,  
+            SCREEN_BACKUP_WALLET, SCREEN_SELECT_WALLET 
+            };
+        } else {
+            ws = new String[] {"Deposit Coins", "Show Coins", 
             "Withdraw Coins", "Transfer Coins", "Show Transactions", "Create Sky Wallet", 
             "Backup", "Back"
-        }, new int[] {  SCREEN_DEPOSIT, SCREEN_SHOW_COINS, SCREEN_WITHDRAW,
+            };
+            rv = new int[] {  SCREEN_DEPOSIT, SCREEN_SHOW_COINS, SCREEN_WITHDRAW,
             SCREEN_TRANSFER, SCREEN_SHOW_TRANSACTIONS, SCREEN_CREATE_SKYWALLET, 
             SCREEN_BACKUP_WALLET, SCREEN_SELECT_WALLET 
-        });      
+            };
+        }
+        
+        showBasicScreen(ws, rv);      
     }
     
     private void showWalletTransactionsScreen() {
@@ -673,7 +709,9 @@ public class Pbank implements ActionListener, ComponentListener {
         setScreen(SCREEN_WITHDRAW_RESULT1);
     }
     
-    public void showWalletWithdrawResult1() {     
+    public void showWalletWithdrawResult1() {
+        boolean isError = currentError != null;
+        
         showTitle("Result of the Export");
         
         if (cbState != CB_STATE_DONE) {
@@ -681,7 +719,7 @@ public class Pbank implements ActionListener, ComponentListener {
             return;
         }
         
-        if (currentError == null || currentError.equals(""))
+        if (!isError)
             showMessage("Exported successfully");
         
         cbState = CB_STATE_INIT;
@@ -1563,7 +1601,6 @@ public class Pbank implements ActionListener, ComponentListener {
     
     class EchoCb implements CallbackInterface {
 	public void callback(Object result) {
-            System.out.println("Launch fracker");
             sm.startFrackFixerService(new FrackFixerCb());
 	}  
     }
@@ -1660,6 +1697,7 @@ public class Pbank implements ActionListener, ComponentListener {
 	public void callback(Object result) {
             ExporterResult er = (ExporterResult) result;
             if (er.status == ExporterResult.STATUS_ERROR) {
+                cbState = CB_STATE_DONE;
 		setError("Failed to export");
 		return;
             }
