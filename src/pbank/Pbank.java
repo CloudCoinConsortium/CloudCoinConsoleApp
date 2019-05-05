@@ -330,25 +330,25 @@ public class Pbank {
         
         DNSSn d = new DNSSn(name, wl);
       
-        if (d.recordExists()) {
+      /*  if (d.recordExists()) {
             setError("DNS record already exists");
             setScreen(SCREEN_MAIN_WALLET);
             return;
         }
         
-        
+        */
                 
         System.out.println("Enter the path of the ID Coin: ");
         showCursor();
         
         path = readItem();
-        
+        /*
         if (!d.setRecord(path, sm.getSR())) {
             setError("Failed to set record. Check if the coin is valid");
             setScreen(SCREEN_MAIN_WALLET);
             return;
         }
-        
+        */
         String newFileName = name + ".stack";
         
         
@@ -611,7 +611,8 @@ public class Pbank {
         cbState = CB_STATE_INIT;     
         requestedDialog = DIALOG_BANK;
         
-        sm.startShowCoinsService(new ShowCoinsCb());
+        if (!sm.getActiveWallet().isSkyWallet())
+            sm.startShowCoinsService(new ShowCoinsCb());
         
         setScreen(SCREEN_SHOW_COINS_RESULT);
     }
@@ -1048,7 +1049,8 @@ public class Pbank {
     
     class EchoCb implements CallbackInterface {
 	public void callback(Object result) {
-            sm.startFrackFixerService(new FrackFixerCb());
+            if (!sm.getActiveWallet().isSkyWallet())
+                sm.startFrackFixerService(new FrackFixerCb());
 	}  
     }
     
